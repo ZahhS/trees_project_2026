@@ -1,0 +1,5 @@
+*.png filter=lfs diff=lfs merge=lfs -text
+patches_v1_seed42/metadata.csv filter=lfs diff=lfs merge=lfs -text
+patches_v1_seed42/*.npy filter=lfs diff=lfs merge=lfs -text
+patches_dataset/patches_v1_seed42/metadata.csv filter=lfs diff=lfs merge=lfs -text
+patches_dataset/patches_v1_seed42/*.npy filter=lfs diff=lfs merge=lfs -text
