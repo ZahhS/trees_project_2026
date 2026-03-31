@@ -10,7 +10,9 @@ import random
 from torchvision import datasets, transforms
 from pathlib import Path
 import cv2
+import pandas as pd
 
+AUG_ROOT = "patches_dataset/patches_v3_train_aug"
 SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
@@ -57,63 +59,54 @@ def load_dataset(df,PATCHES_ROOT,BATCH_SIZE):
     test_loader  = DataLoader(test_dataset,  batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
     return train_dataset,test_dataset,train_loader,test_loader
 
-
-
-class UnifiedPatchDataset(Dataset):
-    def __init__(self, df, orig_root, aug_root=None, transform=None):
+class AugmentedPatchDataset(Dataset):
+    def __init__(self, df, orig_root, aug_root, transform=None):
         self.df = df.reset_index(drop=True)
-        self.orig_root = Path(orig_root)
-        self.aug_root = Path(aug_root) if aug_root else None
+        self.orig_root = orig_root
+        self.aug_root = aug_root
         self.transform = transform
-    
+
     def __len__(self):
         return len(self.df)
-    
+
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
-        pid, label = row["patch_id"], int(row["label"])
+        patch_id = str(row["patch_id"])
+        label = int(row["label"])
         
-        # Try augmented path first, then original
-        if self.aug_root and str(pid).startswith(tuple(f"{p}_aug_" for p in range(10000))):
-            subdir = "positive" if label == 1 else "negative"
-            img_path = self.aug_root / subdir / f"{pid}.png"
+        subdir = "positive" if label == 1 else "negative"
+        
+        # Check if its augmented by looking at the suffix of the column type sufix _aug
+        if "_aug" in row["type"]:
+            img_path = os.path.join(self.aug_root, subdir, f"{patch_id}.png")
+            if not os.path.exists(img_path):
+                raise FileNotFoundError(f"Missing augmented patch file: {img_path}")
         else:
-            subdir = "positive" if label == 1 else "negative"
-            img_path = self.orig_root / subdir / f"{pid}.png"
-        
-        if not img_path.exists():
-            raise FileNotFoundError(f"Missing: {img_path}")
-        
-        img = cv2.imread(str(img_path))
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        
+            img_path = os.path.join(self.orig_root, subdir, f"{patch_id}.png")
+            if not os.path.exists(img_path):
+                raise FileNotFoundError(f"Missing: orig={img_path}")
+    
+        img = Image.open(img_path).convert("RGB")
         if self.transform:
-            img = self.transform(image=img)["image"]
+            img = self.transform(img)
         
-        return img, torch.tensor(label, dtype=torch.float32)
+        y = torch.tensor(label, dtype=torch.float32)
+        return img, y
 
-
-
-def load_dataset(df,PATCHES_ROOT,BATCH_SIZE):
+def load_augmented_dataset(orig_root, aug_root, path_aug_metadata, path_test_metadata, BATCH_SIZE):
     transform = transforms.Compose([transforms.ToTensor()])
-
-    test_dataset = UnifiedPatchDataset(test_df, PATCHES_ROOT)
-    train_dataset_aug = UnifiedPatchDataset(train_df_combined, PATCHES_ROOT, AUG_ROOT, eval_transform)
-
-    train_df, test_df = train_test_split(df,test_size=0.2,random_state=SEED,stratify=df["label"])
-
-    train_dataset = PatchDataset(train_df, root_dir=PATCHES_ROOT, transform=transform)
-    test_dataset  = PatchDataset(test_df,  root_dir=PATCHES_ROOT, transform=transform)
-
-    print("train/test:", len(train_dataset), len(test_dataset))
-
+    
+    # Load augmented train (combined original + aug)
+    train_df = pd.read_csv(path_aug_metadata)
+    train_dataset = AugmentedPatchDataset(train_df, orig_root, aug_root, transform)
+    
+    # Load test (original only)
+    test_df = pd.read_csv(path_test_metadata)
+    test_dataset = PatchDataset(test_df, orig_root, transform)
+    
+    print("train_aug/test:", len(train_dataset), len(test_dataset))
+    
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
-    test_loader  = DataLoader(test_dataset,  batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
-    return train_dataset,test_dataset,train_loader,test_loader
-
-
-
-print("Dataset verification:")
-for images, labels in DataLoader(train_dataset_aug, batch_size=4):
-    print(f"Batch shape: {images.shape}, labels: {labels}")
-    break
+    test_loader  = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
+    
+    return train_dataset, test_dataset, train_loader, test_loader
