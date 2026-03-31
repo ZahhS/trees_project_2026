@@ -44,7 +44,7 @@ class PatchDataset(Dataset):
 def load_dataset(df,PATCHES_ROOT,BATCH_SIZE):
     transform = transforms.Compose([transforms.ToTensor()])
 
-    train_df, test_df = train_test_split(df,test_size=0.2,random_state=SEED)
+    train_df, test_df = train_test_split(df,test_size=0.2,random_state=SEED,stratify=df["label"])
 
     train_dataset = PatchDataset(train_df, root_dir=PATCHES_ROOT, transform=transform)
     test_dataset  = PatchDataset(test_df,  root_dir=PATCHES_ROOT, transform=transform)
