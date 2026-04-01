@@ -42,22 +42,26 @@ class PatchDataset(Dataset):
         if self.transform:
             img = self.transform(img)
 
-        y = torch.tensor(label, dtype=torch.float32)
+        y = torch.tensor(label, dtype=torch.long)
         return img, y
 
-def load_dataset(df,PATCHES_ROOT,BATCH_SIZE):
+def load_dataset(traindf,testdf,PATCHES_ROOT,BATCH_SIZE):
     transform = transforms.Compose([transforms.ToTensor()])
 
-    train_df, test_df = train_test_split(df,test_size=0.2,random_state=SEED,stratify=df["label"])
+    subtrain_df, val_df = train_test_split(traindf,test_size=0.2,random_state=SEED,stratify=traindf["label"])
 
-    train_dataset = PatchDataset(train_df, root_dir=PATCHES_ROOT, transform=transform)
-    test_dataset  = PatchDataset(test_df,  root_dir=PATCHES_ROOT, transform=transform)
+    train_dataset = PatchDataset(subtrain_df, root_dir=PATCHES_ROOT, transform=transform)
+    val_dataset  = PatchDataset(val_df,  root_dir=PATCHES_ROOT, transform=transform)
+    print("train/val:", len(train_dataset), len(val_dataset))
 
-    print("train/test:", len(train_dataset), len(test_dataset))
-
+    # loading seperate test dataset
+    test_dataset = PatchDataset(testdf, root_dir=PATCHES_ROOT, transform=transform)
+    
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
-    test_loader  = DataLoader(test_dataset,  batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
-    return train_dataset,test_dataset,train_loader,test_loader
+    val_loader  = DataLoader(val_dataset,  batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
+    test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
+
+    return train_dataset,val_dataset,train_loader,val_loader, test_dataset, test_loader
 
 class AugmentedPatchDataset(Dataset):
     def __init__(self, df, orig_root, aug_root, transform=None):
@@ -90,7 +94,7 @@ class AugmentedPatchDataset(Dataset):
         if self.transform:
             img = self.transform(img)
         
-        y = torch.tensor(label, dtype=torch.float32)
+        y = torch.tensor(label, dtype=torch.long)
         return img, y
 
 def load_augmented_dataset(orig_root, aug_root, path_aug_metadata, path_test_metadata, BATCH_SIZE):
