@@ -1,0 +1,39 @@
+{
+  "task": "binary_tree_segmentation",
+  "experiments": [
+    {
+      "experiment_id": "exp_001",
+      "model_name": "mlp_head",
+      "backbone": "dinov3",
+      "features_source": "dinov3_patch_embeddings",
+      "dataset_split": "val",
+      "image_size": [512, 512],
+      "threshold_results": [
+        {
+          "threshold": 0.3,
+          "iou": 0.68,
+          "dice": 0.81,
+          "precision": 0.72,
+          "recall": 0.93,
+          "f1_score": 0.81
+        },
+        {
+          "threshold": 0.5,
+          "iou": 0.71,
+          "dice": 0.83,
+          "precision": 0.81,
+          "recall": 0.86,
+          "f1_score": 0.83
+        },
+        {
+          "threshold": 0.7,
+          "iou": 0.74,
+          "dice": 0.85,
+          "precision": 0.89,
+          "recall": 0.80,
+          "f1_score": 0.84
+        }
+      ]
+    }
+  ]
+}
