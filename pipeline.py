@@ -6,6 +6,8 @@ from dataclasses import asdict, dataclass
 from xml.parsers.expat import model
 import numpy as np
 import torch
+import random
+from tqdm import tqdm
 from sklearn.metrics import (
     accuracy_score,
     precision_score,
@@ -21,6 +23,7 @@ from sklearn.metrics import (
 
 def set_seed(seed: int):
     """Set random seeds for reproducibility."""
+    random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
@@ -151,8 +154,7 @@ def fit_binary_classifier(model,train_loader,val_loader,test_loader,criterion,op
     Saves everything into one JSON.
     """
     ensure_dir(run_dir)
-    best_path = os.path.join(run_dir, "best_model.pt")
-
+    SAVING_FILE_NAME = os.path.join(run_dir, f"best_model_{config.get('model')}_{config.get('learning_rate')}_{config.get('epochs')}.pt")
     history = []
     best_state = None
     best_val = -float("inf")
@@ -249,3 +251,57 @@ def fit_binary_classifier(model,train_loader,val_loader,test_loader,criterion,op
 
     save_json(run_info, os.path.join(run_dir, "results.json"))
     return run_info, model
+
+def eval_clip(model, processor, loader, prompts, device, max_batches=100):
+    """Evaluate clip model on a dataloader and return metrics."""
+    model.eval()
+    all_positive_probs = []
+    all_labels = []
+    
+    with torch.no_grad():
+        for i, (images, labels) in enumerate(tqdm(loader)):
+            if i >= max_batches: break
+            
+            images = images.to(device)
+            inputs = processor(
+                text=prompts, 
+                images=images,  
+                return_tensors="pt", 
+                padding=True
+            )
+            inputs = {k: v.to(device) for k, v in inputs.items()}
+            
+            outputs = model(**inputs)
+            logits_per_image = outputs.logits_per_image  # size (B, len(prompts))
+            #print("logits",logits_per_image,logits_per_image.shape)
+            probs = torch.softmax(logits_per_image,dim=1)
+            #print("probs",probs,probs.shape)
+            pos_prob = probs[:,0] # the first column is for trees (second is no tree)
+
+            all_positive_probs.extend(pos_prob.cpu().numpy())
+            all_labels.extend(labels.numpy())
+    y_prob = np.array(all_positive_probs)
+    y_true = np.array(all_labels)
+    metrics = compute_binary_metrics(y_true, y_prob)
+    return metrics, y_prob, y_true
+
+def evaluate(model, loader, criterion, device):
+    model.eval()
+    losses = []
+    all_labels = []
+    all_probs = []
+
+    for images, labels in loader:
+        images = images.to(device)
+        labels = labels.to(device)
+
+        logits = model(images)
+        loss = criterion(logits, labels)
+
+        losses.append(loss.item())
+        probs = logits_to_probs(logits).detach().cpu().numpy()
+        all_probs.append(probs)
+        all_labels.append(labels.cpu().numpy())
+
+    
+    return metrics
