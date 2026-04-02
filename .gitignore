@@ -1,3 +1,4 @@
 *.pyc
 /eda_bbox
-*.pth
+.ipynb_checkpoints/
+.DS_Store
