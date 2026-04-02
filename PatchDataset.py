@@ -101,9 +101,12 @@ def load_augmented_dataset(orig_root, aug_root, path_aug_metadata, path_test_met
     transform = transforms.Compose([transforms.ToTensor()])
     
     # Load augmented train (combined original + aug)
-    train_df = pd.read_csv(path_aug_metadata)
-    train_dataset = AugmentedPatchDataset(train_df, orig_root, aug_root, transform)
-    
+    traindf = pd.read_csv(path_aug_metadata)
+    subtrain_df, val_df = train_test_split(traindf,test_size=0.2,random_state=SEED,stratify=traindf["label"])
+
+    train_dataset = AugmentedPatchDataset(subtrain_df, orig_root, aug_root, transform)
+    val_dataset  = AugmentedPatchDataset(val_df, orig_root, aug_root, transform)
+
     # Load test (original only)
     test_df = pd.read_csv(path_test_metadata)
     test_dataset = PatchDataset(test_df, orig_root, transform)
@@ -112,5 +115,6 @@ def load_augmented_dataset(orig_root, aug_root, path_aug_metadata, path_test_met
     
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
     test_loader  = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
-    
-    return train_dataset, test_dataset, train_loader, test_loader
+    val_loader  = DataLoader(val_dataset,  batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
+
+    return train_dataset,val_dataset,train_loader,val_loader, test_dataset, test_loader
