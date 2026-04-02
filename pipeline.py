@@ -154,7 +154,7 @@ def fit_binary_classifier(model,train_loader,val_loader,test_loader,criterion,op
     Saves everything into one JSON.
     """
     ensure_dir(run_dir)
-    SAVING_FILE_NAME = os.path.join(run_dir, f"best_model_{config.get('model')}_{config.get('learning_rate')}_{config.get('epochs')}.pt")
+    SAVING_FILE_NAME = os.path.join(run_dir, f"best_model_{config.get('model')}_{config.get('learning_rate')}_{config.get('epochs')}")
     history = []
     best_state = None
     best_val = -float("inf")
