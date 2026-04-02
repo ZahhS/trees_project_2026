@@ -284,24 +284,3 @@ def eval_clip(model, processor, loader, prompts, device, max_batches=100):
     y_true = np.array(all_labels)
     metrics = compute_binary_metrics(y_true, y_prob)
     return metrics, y_prob, y_true
-
-def evaluate(model, loader, criterion, device):
-    model.eval()
-    losses = []
-    all_labels = []
-    all_probs = []
-
-    for images, labels in loader:
-        images = images.to(device)
-        labels = labels.to(device)
-
-        logits = model(images)
-        loss = criterion(logits, labels)
-
-        losses.append(loss.item())
-        probs = logits_to_probs(logits).detach().cpu().numpy()
-        all_probs.append(probs)
-        all_labels.append(labels.cpu().numpy())
-
-    
-    return metrics
