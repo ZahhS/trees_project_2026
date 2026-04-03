@@ -251,6 +251,75 @@ def fit_binary_classifier(model,train_loader,val_loader,test_loader,criterion,op
 
     save_json(run_info, os.path.join(run_dir, "results.json"))
     return run_info, model
+    
+# CNN from scratch USAGE only ---------------------------------------------------------------------------------------------
+def build_model():
+    model = SimpleCNN3().to(device)
+    return model
+
+def build_loss_and_optimizer(model, train_df, lr=1e-3):
+    class_counts = train_df["label"].value_counts().sort_index()
+    neg = int(class_counts.get(0, 0))
+    pos = int(class_counts.get(1, 0))
+
+    # pondérer la classe positive pour garder rééquilibrage
+    # poids classe 0 = 1.0 ; poids classe 1 = neg / pos
+    class_weights = torch.tensor([1.0, neg / max(pos, 1)], dtype=torch.float32).to(device)
+
+    criterion = nn.CrossEntropyLoss(weight=class_weights) # classif binaire avec 2 logits (to use pipeline.ipynb)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    return criterion, optimizer
+
+# helper pour lancer une expérience pipeline.py sur un jeu de loaders
+def run_experiment(train_dataset, val_dataset, train_loader, val_loader, test_dataset, test_loader, run_dir, train_df, experiment_name):
+    model = build_model()
+    criterion, optimizer = build_loss_and_optimizer(model, train_df, lr=1e-3)
+
+    config = {
+        "model": "SimpleCNN3",
+        "batch_size": BATCH_SIZE,
+        "epochs": 10,
+        "learning_rate": 1e-3,
+        "loss": "CrossEntropyLoss",
+        "patch_size": PATCH_SIZE,
+        "seed": SEED,
+        "experiment": experiment_name,
+    }
+
+    pipeline.SAVING_FILE_NAME = os.path.join(run_dir, "best_model")
+
+    run_info, best_model = fit_binary_classifier(
+        model=model,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        test_loader=test_loader,
+        criterion=criterion,
+        optimizer=optimizer,
+        device=device,
+        run_dir=run_dir,
+        config=config,
+        patience=5,
+        monitor="f1",
+    )
+
+    y_true, scores = predict_probs(best_model, test_loader, device)
+    preds05 = (scores >= 0.5).astype(int)
+    preds07 = (scores >= 0.7).astype(int)
+
+    print(experiment_name)
+    print("test @0.5")
+    print(confusion_matrix(y_true, preds05))
+    print(classification_report(y_true, preds05, target_names=["Negative", "Positive"]))
+
+    return {
+        "run_info": run_info,
+        "best_model": best_model,
+        "y_true": y_true,
+        "scores": scores,
+        "preds05": preds05,
+        "preds07": preds07,
+    }
+# ---------------------------------------------------------------------------------------------------------------------------
 
 def eval_clip(model, processor, loader, prompts, device, max_batches=100):
     """Evaluate clip model on a dataloader and return metrics."""
