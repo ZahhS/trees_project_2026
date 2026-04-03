@@ -67,7 +67,7 @@ def predict_probs(model, loader, device):
     all_probs = []
     all_labels = []
 
-    for images, labels in loader:
+    for images, labels in tqdm(loader):
         images = images.to(device)
         outputs = model(images)
         probs = logits_to_probs(outputs).detach().cpu().numpy()
@@ -83,7 +83,7 @@ def train_one_epoch(model, loader, criterion, optimizer, device):
     all_labels = []
     all_probs = []
 
-    for images, labels in loader:
+    for images, labels in tqdm(loader):
         images = images.to(device)
         labels = labels.to(device)
 
@@ -112,7 +112,7 @@ def evaluate(model, loader, criterion, device):
     all_labels = []
     all_probs = []
 
-    for images, labels in loader:
+    for images, labels in tqdm(loader):
         images = images.to(device)
         labels = labels.to(device)
 
