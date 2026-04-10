@@ -4,3 +4,4 @@
 .DS_Store
 *.pth
 segmentation_dataset.py
+images/
