@@ -39,10 +39,10 @@ CFG = dict(
     run_dir     = f"./runs/dinov2_seg1",
     mini        = True,
     img_size    = 448,
-    batch_size  = 2,
+    batch_size  = 4,
     num_workers = 0,
-    epochs      = 30,
-    lr          = 1e-3,       # decoder only — backbone is frozen
+    epochs      = 60,
+    lr          = 1e-4,       
     seed        = 42,
     val_fraction= 0.15,
     # known-bad milliontrees indices that cause OOM in __getitem__
@@ -170,11 +170,39 @@ class DinoV2Segmentation(nn.Module):
     def __init__(self, backbone, feat_dim=384):
         super().__init__()
         self.backbone = backbone
+        """
         self.decoder  = nn.Sequential(
             nn.Conv2d(feat_dim, 128, kernel_size=3, padding=1),
             nn.ReLU(),
             nn.Conv2d(128, 2, kernel_size=1),
         )
+        self.decoder = nn.Sequential(
+            nn.Conv2d(feat_dim, 256, kernel_size=3, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.Conv2d(256, 128, kernel_size=3, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.Dropout2d(0.1),
+            nn.Conv2d(128, 2, kernel_size=1),
+        )
+        """
+        self.decoder = nn.Sequential(
+            nn.Conv2d(feat_dim, 256, kernel_size=3, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.Dropout2d(0.3),          # was 0.1
+            nn.Conv2d(256, 128, kernel_size=3, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.Dropout2d(0.2),          # add second dropout
+            nn.Conv2d(128, 2, kernel_size=1),
+        )
+        # kaiming init for faster convergence
+        for m in self.decoder.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode="fan_out")
+
 
     def forward(self, x):
         # x: [B, 3, H, W]  float32
@@ -208,7 +236,18 @@ def compute_metrics(logits, masks):
     masks  : [B, H, W]  int64  values {0,1}
     Returns dict of scalar tensors: loss, precision, recall, iou
     """
-    loss = F.cross_entropy(logits, masks)
+    #loss = F.cross_entropy(logits, masks)
+    pos_frac = masks.float().mean().clamp(0.01, 0.99)
+    weight = torch.tensor([pos_frac, 1.0 - pos_frac], device=logits.device)
+    ce_loss = F.cross_entropy(logits, masks, weight=weight)
+
+    probs = F.softmax(logits, dim=1)[:, 1]   # foreground prob [B,H,W]
+    flat_p = probs.reshape(-1)
+    flat_m = masks.float().reshape(-1)
+    dice = 1 - (2 * (flat_p * flat_m).sum() + 1) / (flat_p.sum() + flat_m.sum() + 1)
+
+    loss = ce_loss + dice
+
     preds = logits.argmax(dim=1)   # [B, H, W]
 
     tp = ((preds == 1) & (masks == 1)).sum().float()
@@ -288,9 +327,27 @@ def save_visualizations(model, test_ds, device, viz_dir, img_size):
     print(f"Visualizations saved to {viz_dir}/")
 
 
+class EarlyStopping:
+    def __init__(self, patience=8, min_delta=1e-4):
+        self.patience   = patience
+        self.min_delta  = min_delta
+        self.best       = 0.0
+        self.counter    = 0
+
+    def step(self, val_iou):
+        if val_iou > self.best + self.min_delta:
+            self.best    = val_iou
+            self.counter = 0
+            return False   # don't stop
+        self.counter += 1
+        print(f"  [EarlyStopping] no improvement for {self.counter}/{self.patience} epochs")
+        return self.counter >= self.patience   # stop=True
+
 # ──────────────────────────────────────────────
 # 7.  Main
 # ──────────────────────────────────────────────
+
+
 
 def main():
     torch.manual_seed(CFG["seed"])
@@ -305,6 +362,7 @@ def main():
 
     # ── model ──
     model = build_model().to(device)
+    """
     optimizer = torch.optim.Adam(
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=CFG["lr"]
@@ -312,19 +370,31 @@ def main():
     # reduce LR if val loss plateaus for 5 epochs
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="max", patience=5, factor=0.5
+    )"""
+
+    optimizer = torch.optim.AdamW(
+        filter(lambda p: p.requires_grad, model.parameters()),
+        lr=CFG["lr"], weight_decay=1e-4
+    )
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=CFG["epochs"] 
     )
 
     # ── training loop ──
     history   = {"train": [], "val": []}
     best_iou  = 0.0
-    best_path = os.path.join(CFG["run_dir"], "model_best.pt")
+    stopper = EarlyStopping(patience=8)
+    best_path = os.path.join(CFG["run_dir"], "model_best.pth")
 
     for epoch in range(1, CFG["epochs"] + 1):
         t0 = time.time()
         train_m = run_epoch(model, train_loader, optimizer, device, train=True)
         val_m   = run_epoch(model, val_loader,   optimizer, device, train=False)
-        scheduler.step(val_m["iou"])
-
+        #scheduler.step(val_m["iou"])
+        scheduler.step()
+        if stopper.step(val_m["iou"]):
+            print(f"Early stopping at epoch {epoch}")
+            break
         history["train"].append(train_m)
         history["val"].append(val_m)
 
@@ -342,7 +412,7 @@ def main():
             print(f"  ✓ new best IoU {best_iou:.4f} — saved")
 
     # ── save final model ──
-    torch.save(model.state_dict(), os.path.join(CFG["run_dir"], "model_final.pt"))
+    torch.save(model.state_dict(), os.path.join(CFG["run_dir"], "model_final.pth"))
 
     # ── test evaluation ──
     print("\nEvaluating on test set…")
