@@ -2,6 +2,6 @@
 /eda_bbox
 .ipynb_checkpoints/
 .DS_Store
-*.pth
 segmentation_dataset.py
 images/
+data/cache_seg/
