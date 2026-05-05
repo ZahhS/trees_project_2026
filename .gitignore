@@ -4,4 +4,5 @@
 .DS_Store
 segmentation_dataset.py
 images/
-data/cache_seg/
+data/cache_seg/sam_vit_b_01ec64.pth
+sam_vit_b_01ec64.pth
